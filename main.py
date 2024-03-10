@@ -3,29 +3,54 @@ from streamlit_chat import message
 from dotenv import load_dotenv
 import os
 import webbrowser
+import fitz  # PyMuPDF
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import SystemMessage, HumanMessage, AIMessage
 
 def init():
+    # Load the OpenAI API key from the environment variable
     load_dotenv()
 
+    # Test that the API key exists
     if os.getenv("OPENAI_API_KEY") is None or os.getenv("OPENAI_API_KEY") == "":
         print("OPENAI_API_KEY is not set")
         exit(1)
     else:
         print("OPENAI_API_KEY is set")
 
+    # Setup Streamlit page
     st.set_page_config(
         page_title="IntelliChat",
         page_icon="🤖"
     )
 
 def redirect_to_domain(domain_name):
+    # Generate a URL with the specified domain name
     website_url = f"https://{domain_name}.com"
     st.success(f"Redirecting to: {website_url}")
     webbrowser.open_new_tab(website_url)
 
-def scroll_to_top():
+def extract_text_from_pdf(pdf_bytes):
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    text = ""
+    for page_num in range(doc.page_count):
+        page = doc[page_num]
+        text += page.get_text()
+    return text
+
+def summarize_pdf(pdf_bytes):
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        text = ""
+        for page_num in range(min(3, doc.page_count)):  # Extract first 3 pages for summary
+            page = doc[page_num]
+            text += page.get_text("text")
+        return text
+    except Exception as e:
+        print(f"Error opening PDF: {e}")
+        return None
+
+def back_to_top():
     """Scrolls to the top of the page."""
     js_code = """
     <script>
@@ -51,6 +76,17 @@ def main():
     # Sidebar with user input
     with st.sidebar:
         user_input = st.text_input("Your message: ", key="user_input")
+
+        # Upload PDF file
+        pdf_file = st.file_uploader("Upload PDF", type=["pdf"])
+        if pdf_file:
+            pdf_text = extract_text_from_pdf(pdf_file.read())
+            user_input += "\n" + pdf_text
+
+            # Summarize the PDF
+            pdf_summary = summarize_pdf(pdf_file.read())
+            st.info("PDF Summary:")
+            st.write(pdf_summary)
 
     # Handle user input
     if user_input:
@@ -78,7 +114,7 @@ def main():
             message(msg.content, is_user=False, key=str(i) + '_ai')
 
     # Add a button to go back to the top
-    st.button("Back to Top", on_click=scroll_to_top)
+    st.button("Back to Top", on_click=back_to_top)
 
 if __name__ == '__main__':
     main()
